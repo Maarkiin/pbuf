@@ -13,7 +13,7 @@ CFLAGS_DEBUG := -Wall -Wextra -g
 LIBRARY_PATHS :=
 
 # Linker flags
-LDFLAGS :=
+LDFLAGS := -lgdi32 -luser32
 
 # Include directories
 INCLUDES := -I./include
