@@ -10,12 +10,18 @@ typedef struct BUFFER_T
     int pitch;
 
     BITMAPINFO bmi;
-    int close;
 } buffer_t;
+
+typedef struct renderer {
+    buffer_t **bufs;
+    size_t buf_count;
+
+    int close;
+} renderer_t;
+
 
 void CreateBuffer(buffer_t *buf, u_int width, u_int height)
 {
-    buf->close = 0;
     buf->width = width;
     buf->height = height;
 
@@ -57,8 +63,8 @@ void clearBuffer(buffer_t *buf, uint32_t color)
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-    buffer_t *buf = (buffer_t *)GetWindowLongPtr(hWnd, GWLP_USERDATA);
-    if (!buf)
+    renderer_t *r = (renderer_t *)GetWindowLongPtr(hWnd, GWLP_USERDATA);
+    if (!r)
         return DefWindowProc(hWnd, msg, wParam, lParam);
 
     switch (msg)
@@ -69,20 +75,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
         GetClientRect(hWnd, &rcClient);
         int width = rcClient.right - rcClient.left;
         int height = rcClient.bottom - rcClient.top;
-        free(buf->pixels);
-        CreateBuffer(buf, width, height);
+        free(r->bufs[0]->pixels);
+        free(r->bufs[1]->pixels);
+        CreateBuffer(r->bufs[0], width, height);
+        CreateBuffer(r->bufs[1], width, height);
     }
     break;
     case WM_PAINT:
     {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hWnd, &ps);
-        DisplayBuffer(hdc, buf);
+        DisplayBuffer(hdc, r->bufs[0]);
         EndPaint(hWnd, &ps);
     }
     break;
     case WM_CLOSE:
-        buf->close = 1;
+        r->close = 1;
         break;
     case WM_DESTROY:
         PostQuitMessage(0);
@@ -233,30 +241,17 @@ vec2f_t project(vec3f_t p)
     return vec2f_c(p.x / p.z, p.y / p.z);
 }
 
-/*
+typedef struct object {
+    /* Verticies */
+    vec3f_t *vs;
+    size_t count;
 
-const vs = [
-    {x:  0.25, y:  0.25, z:  0.25},
-    {x: -0.25, y:  0.25, z:  0.25},
-    {x: -0.25, y: -0.25, z:  0.25},
-    {x:  0.25, y: -0.25, z:  0.25},
+    /* Translate */
+    vec3f_t tr;
+    /* Rotate */
+    vec3f_t ro;
+} object_t;
 
-    {x:  0.25, y:  0.25, z: -0.25},
-    {x: -0.25, y:  0.25, z: -0.25},
-    {x: -0.25, y: -0.25, z: -0.25},
-    {x:  0.25, y: -0.25, z: -0.25},
-]
-
-const fs = [
-    [0, 1, 2, 3],
-    [4, 5, 6, 7],
-    [0, 4],
-    [1, 5],
-    [2, 6],
-    [3, 7],
-]
-
-*/
 const vec3f_t cube_vs[] = {
     // BACK  (-Z)
     vec3f_c( 0.5f, -0.5f, -0.5f),
@@ -313,26 +308,6 @@ const vec3f_t cube_vs[] = {
     vec3f_c(-0.5f,  0.5f,  0.5f),
 };
 
-
-// const vec3f_t cube_vs[] =
-//     {
-//         vec3f_c(-0.25f,  0.25f,  0.25f),
-//         vec3f_c( 0.25f,  0.25f,  0.25f),
-//         vec3f_c(-0.25f, -0.25f,  0.25f),
-//         vec3f_c( 0.25f, -0.25f,  0.25f),
-
-//         vec3f_c( 0.25f,  0.25f, -0.25f),
-//         vec3f_c(-0.25f,  0.25f, -0.25f),
-//         vec3f_c(-0.25f, -0.25f, -0.25f),
-//         vec3f_c( 0.25f, -0.25f, -0.25f)
-// };
-
-// const int cube_is[] =
-//     {
-//         0,1,2,
-
-// };
-
 vec3f_t translate(vec3f_t p1, vec3f_t p2)
 {
     return vec3f_c(p1.x+p2.x, p1.y+p2.y, p1.z+p2.z);
@@ -358,28 +333,6 @@ vec3f_t rotate(vec3f_t p, vec3f_t v)
       + p.z * c.y * c.z
     );
 }
-// return vec3f_c(
-//     p.x*c.y-p.z*s.y,
-//     p.y,
-//     p.x*s.y+p.z*c.y
-// );
-
-/*
-
-for x in range(screen_width):
-    ys = []
-    for (p0, p1) in segments:
-        if segment_crosses_x(p0, p1, x):
-            y = interpolate_y(p0, p1, x)
-            ys.append(y)
-
-    ys.sort()
-    for i in range(0, len(ys), 2):
-        draw_vertical_line(x, ys[i], ys[i+1])
-
-
-
-*/
 
 int edge(vec2f_t a, vec2f_t b, vec2f_t c)
 {
@@ -390,63 +343,78 @@ typedef struct tri {
     vec2f_t points[3];
 } triangle_t;
 
-int intriangle(triangle_t t, vec2f_t p)
+int intriangle(triangle_t t, vec2f_t p, int dir)
 {
     int a = edge(t.points[0], t.points[1], p);
     int b = edge(t.points[1], t.points[2], p);
     int c = edge(t.points[2], t.points[0], p);
+    if (dir)
+    {
+        if(a<0 && b<0 && c<0)
+            return 1;
+        return 0;
+    }
     if(a>0 && b>0 && c>0)
         return 1;
     return 0;
 }
 
-void GameLoop(buffer_t *buf, uint32_t frame)
+void RenderObject(renderer_t *r, object_t o)
 {
-    // vec2f_t p = screen(*buf, project(vec3f_c(0.5f, -1.0f, 1.0f)));
-    // point(buf, p, 0x00ffa500);
-    // printf("(%f/%d, %f/%d)\n", p.x, buf->width, p.y, buf->height);
-    //printf("%d\n", frame);
-    
-    int s = (int)(sizeof(cube_vs)/sizeof(cube_vs[0]));
+    int s = o.count;
     vec2f_t points[s];
+    vec3f_t points3d[s];
     for (int i = 0; i < s; ++i)
     {
-        float t = (float)frame/1000;
-        vec3f_t p = translate(rotate(cube_vs[i], vec3f_c(t*3.0f, t, 0.0f)), vec3f_c(0.0f, 0.0f, 2.0f));
-        float brightness = 1 - (p.z/ 20.0f);
-        uint32_t color = 0x00ffa500;
-        uint8_t a = (color >> 24) & 0xFF;
-        uint8_t r = (color >> 16) & 0xFF;
-        uint8_t g = (color >> 8) & 0xFF;
-        uint8_t b = color & 0xFF;
-        
-        r = (uint8_t)(r * brightness > 255 ? 255 : r * brightness);
-        g = (uint8_t)(g * brightness > 255 ? 255 : g * brightness);
-        b = (uint8_t)(b * brightness > 255 ? 255 : b * brightness);
-        
-        color  = (a << 24) | (r << 16) | (g << 8) | b;
-        
-        
-        point(buf, screen(*buf, project(p)), color);
-        points[i] = screen(*buf, project(p));
+        vec3f_t p = translate(rotate(o.vs[i], o.ro), o.tr);
+        points3d[i] = p;
+        points[i] = screen(*r->bufs[0], project(p));
     }
     // for each triangle ...
+    const uint32_t COLORS[6] = {
+        0x004A7BD9,
+        0x00FA6C4E,
+        0x0091D15B,
+        0x00EB5AC1,
+        0x006F48C9,
+        0x00F2D04B
+    };
     for (int i = 0; i < s; i+=3)
     {
+        uint32_t color = COLORS[i/6];
         triangle_t t = {{
             points[i],
             points[i+1],
             points[i+2],
         }};
+        /*
+            TODO: interperlate for per pixel z value for buffer.
+        */
 
-        for (u_int x = 0; x < buf->width; x++)
+        vec2_t mins = vec2_c(
+            max(min(min(t.points[0].x, t.points[1].x), t.points[2].x), 0),
+            max(min(min(t.points[0].y, t.points[1].y), t.points[2].y), 0)
+        );
+        vec2_t maxs = vec2_c(
+            min(max(max(t.points[0].x, t.points[1].x), t.points[2].x), r->bufs[0]->width),
+            min(max(max(t.points[0].y, t.points[1].y), t.points[2].y), r->bufs[0]->height)
+        );
+
+        //printf("x:%d->%d\ny:%d->%d\n[tri:%d]\n", mins.x, maxs.x, mins.y, maxs.y, i);
+
+        for (int x = mins.x; x < maxs.x; x++)
         {
-            for (u_int y = 0; y < buf->height; y++)
+            for (int y = mins.y; y < maxs.y; y++)
             {
                 vec2f_t p = vec2f_c(x, y);
-                if (intriangle(t, p))
+                if (intriangle(t, p, 1))
                 {
-                    point(buf, p, 0x00ffa500);
+                    
+                    if ( ((uint32_t *)r->bufs[1]->pixels)[(int)p.x + (int)p.y * r->bufs[1]->width] < points3d[i].z*0xFF00 )
+                    {
+                        point(r->bufs[1], p, points3d[i].z*0xFF00);
+                        point(r->bufs[0], p, color); //0x00ffa500  
+                    }
                 }
             }
         }
@@ -454,21 +422,43 @@ void GameLoop(buffer_t *buf, uint32_t frame)
     }
 }
 
-/*
 
-// Let's assume we have a Point type with an x and y property
-interface Point {
-    x: number;
-    y: number;
+void GameLoop(renderer_t *r, uint32_t frame)
+{
+    object_t cube;
+    cube.vs = malloc(sizeof(cube_vs));
+    memcpy(cube.vs, cube_vs, sizeof(cube_vs));
+    cube.count = sizeof(cube_vs)/sizeof(cube_vs[0]);
+    float t = (float)frame/1000;
+    cube.ro = vec3f_c(t*3.0f, t, 0.0f);
+
+    const vec3f_t cube_positions[] = {
+        //vec3f_c( 0.0f,  0.0f,  0.0f),
+        vec3f_c( 2.0f,  5.0f,  15.0f),
+        vec3f_c(-1.5f, -2.2f,  2.5f),
+        vec3f_c(-3.8f, -2.0f,  12.3f),
+        vec3f_c( 2.4f, -0.4f,  3.5f),
+        vec3f_c(-1.7f,  3.0f,  7.5f),
+        vec3f_c( 1.3f, -2.0f,  2.5f),
+        vec3f_c( 1.5f,  2.0f,  2.5f),
+        vec3f_c( 1.5f,  0.2f,  1.5f),
+        vec3f_c(-1.3f,  1.0f,  1.5f)
+    };
+
+    for (size_t i = 0; i < sizeof(cube_positions)/sizeof(cube_positions[0]); i++)
+    {
+        cube.tr = cube_positions[i];
+        RenderObject(r, cube);
     }
     
-    // Returns double the signed area but that's fine
-    const edgeFunction = (a: Point, b: Point, c: Point) => {
-  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
-};
+    // cube.tr = vec3f_c(0.0f, 0.0f, 2.0f);
 
-const ABC = edgeFunction(A, B, C)
-*/
+    // RenderObject(r, cube);
+
+    // cube.tr = vec3f_c(0.0f, 5.0f, 5.0f);
+    // RenderObject(r, cube);
+    free(cube.vs);
+}
 
 int main(int argc UNUSED, char **argv UNUSED)
 {
@@ -480,28 +470,29 @@ int main(int argc UNUSED, char **argv UNUSED)
     int width = rcClient.right - rcClient.left;
     int height = rcClient.bottom - rcClient.top;
 
-    buffer_t buf = {0};
-    CreateBuffer(&buf, width, height);
-    SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)&buf);
+
+    renderer_t r = {0};
+    r.close = 0;
+    r.buf_count = 2;
+    r.bufs = malloc(r.buf_count*sizeof(buffer_t*));
+    r.bufs[0] = malloc(sizeof(buffer_t));
+    CreateBuffer(r.bufs[0], width, height);
+    r.bufs[1] = malloc(sizeof(buffer_t));
+    CreateBuffer(r.bufs[1], width, height);
+
+    SetWindowLongPtr(hWnd, GWLP_USERDATA, (LONG_PTR)&r);
+
     /**/
     uint32_t frame = 0;
     /**/
     ShowWindow(hWnd, SW_SHOW);
     UpdateWindow(hWnd);
     MSG Msg;
-    // while (GetMessage(&Msg, hWnd, 0, 0) > 0)
-    // {
-    //     clearBuffer(&buf, 0x00065535);
-    //     GameLoop(&buf, frame++);
-
-    //     InvalidateRect(hWnd, NULL, FALSE);
-    //     TranslateMessage(&Msg);
-    //     DispatchMessage(&Msg);
-    // }
-    while (!buf.close)
+    while (!r.close)
     {
-        clearBuffer(&buf, 0x00065535);
-        GameLoop(&buf, frame++);
+        clearBuffer(r.bufs[0], 0x00065535);
+        clearBuffer(r.bufs[1], 0x00000000);
+        GameLoop(&r, frame++);
 
         InvalidateRect(hWnd, NULL, FALSE);
         while (PeekMessage(&Msg, NULL, 0, 0, PM_REMOVE))
@@ -512,6 +503,10 @@ int main(int argc UNUSED, char **argv UNUSED)
     }
 
     DestroyWindow(hWnd);
-    free(buf.pixels);
+    free(r.bufs[0]->pixels);
+    free(r.bufs[0]);
+    free(r.bufs[1]->pixels);
+    free(r.bufs[1]);
+    free(r.bufs);
     return Msg.wParam;
 }
