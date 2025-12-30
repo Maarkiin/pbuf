@@ -85,7 +85,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hWnd, &ps);
-        DisplayBuffer(hdc, r->bufs[0]);
+        DisplayBuffer(hdc, r->bufs[1]);
         EndPaint(hWnd, &ps);
     }
     break;
@@ -444,9 +444,9 @@ void RenderObject(renderer_t *r, object_t o)
                     // const b = colourA.b * weightA + colourB.b * weightB + colourC.b * weightC;
                     float fz = points3d[0].z * weights.x + points3d[1].z * weights.y + points3d[2].z * weights.z; 
                     //printf("%f\n", weights.x);
-                    if ( ((uint32_t *)r->bufs[1]->pixels)[x + y*r->bufs[1]->width] < (uint32_t)fz )
+                    if ( ((uint32_t *)r->bufs[1]->pixels)[x + y*r->bufs[1]->width] > (uint32_t)fz* 0x0f )
                     {
-                        point(r->bufs[1], p, (uint32_t)fz);
+                        point(r->bufs[1], p, (uint32_t)fz* 0x0f );
                         point(r->bufs[0], p, color); //0x00ffa500  
                     }
                 }
