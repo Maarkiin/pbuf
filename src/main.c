@@ -343,11 +343,36 @@ typedef struct tri {
     vec2f_t points[3];
 } triangle_t;
 
-int intriangle(triangle_t t, vec2f_t p, int dir)
+/*
+        
+        // Normalise the edge functions by dividing by the total area to get the barycentric coordinates
+        const weightA = BCP / ABC;
+        const weightB = CAP / ABC;
+        const weightC = ABP / ABC;
+
+        */
+
+int intriangle(triangle_t t, vec2f_t p, int dir, vec3f_t *weights)
 {
-    int a = edge(t.points[0], t.points[1], p);
-    int b = edge(t.points[1], t.points[2], p);
-    int c = edge(t.points[2], t.points[0], p);
+    float area = (float)edge(t.points[0], t.points[1], t.points[2]);
+    float a    = (float)edge(t.points[0], t.points[1], p);
+    float b    = (float)edge(t.points[1], t.points[2], p);
+    float c    = (float)edge(t.points[2], t.points[0], p);
+
+    vec3f_t w = vec3f_c(
+        b/area,
+        c/area,
+        a/area
+    );
+    //printf("%f\n", w.x);
+    for (int i = 0; i < 3; ++i)
+        weights->value[i] = w.value[i];
+        
+    if (area > 0)
+    {
+        return 0;
+    }
+
     if (dir)
     {
         if(a<0 && b<0 && c<0)
@@ -390,29 +415,38 @@ void RenderObject(renderer_t *r, object_t o)
         /*
             TODO: interperlate for per pixel z value for buffer.
         */
-
+        int temp = 10;
         vec2_t mins = vec2_c(
-            max(min(min(t.points[0].x, t.points[1].x), t.points[2].x), 0),
-            max(min(min(t.points[0].y, t.points[1].y), t.points[2].y), 0)
+            max(min(min(t.points[0].x-temp, t.points[1].x-temp), t.points[2].x-temp), 0),
+            max(min(min(t.points[0].y-temp, t.points[1].y-temp), t.points[2].y-temp), 0)
         );
         vec2_t maxs = vec2_c(
-            min(max(max(t.points[0].x, t.points[1].x), t.points[2].x), r->bufs[0]->width),
-            min(max(max(t.points[0].y, t.points[1].y), t.points[2].y), r->bufs[0]->height)
+            min(max(max(t.points[0].x+temp, t.points[1].x+temp), t.points[2].x+temp), r->bufs[0]->width),
+            min(max(max(t.points[0].y+temp, t.points[1].y+temp), t.points[2].y+temp), r->bufs[0]->height)
         );
 
         //printf("x:%d->%d\ny:%d->%d\n[tri:%d]\n", mins.x, maxs.x, mins.y, maxs.y, i);
+
+        
+
+        vec3f_t weights;
 
         for (int x = mins.x; x < maxs.x; x++)
         {
             for (int y = mins.y; y < maxs.y; y++)
             {
                 vec2f_t p = vec2f_c(x, y);
-                if (intriangle(t, p, 1))
+                if (intriangle(t, p, 1, &weights))
                 {
-                    
-                    if ( ((uint32_t *)r->bufs[1]->pixels)[(int)p.x + (int)p.y * r->bufs[1]->width] < points3d[i].z*0xFF00 )
+                    // Interpolate the colours at point P
+                    // const r = colourA.r * weightA + colourB.r * weightB + colourC.r * weightC;
+                    // const g = colourA.g * weightA + colourB.g * weightB + colourC.g * weightC;
+                    // const b = colourA.b * weightA + colourB.b * weightB + colourC.b * weightC;
+                    float fz = points3d[0].z * weights.x + points3d[1].z * weights.y + points3d[2].z * weights.z; 
+                    //printf("%f\n", weights.x);
+                    if ( ((uint32_t *)r->bufs[1]->pixels)[x + y*r->bufs[1]->width] < (uint32_t)fz )
                     {
-                        point(r->bufs[1], p, points3d[i].z*0xFF00);
+                        point(r->bufs[1], p, (uint32_t)fz);
                         point(r->bufs[0], p, color); //0x00ffa500  
                     }
                 }
