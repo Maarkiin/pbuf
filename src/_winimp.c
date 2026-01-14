@@ -97,7 +97,7 @@ void resizeBuffer(buffer_t b, uint w, uint h)
     bi->bmi.bmiHeader.biHeight = h;
     for (uint i = 0; i < bi->width*bi->height; ++i)
     {
-        ((uint32_t *)bi->pixels)[i] = 0x0091D15B;
+        ((uint32_t *)bi->pixels)[i] = 0;
     }
 }
 
