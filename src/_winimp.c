@@ -59,6 +59,7 @@ window_t createWindow(window_t w, uint width, uint height, char *title)
     wi->frame = createFrame(width, height);
     memset(wi->keys, 0, sizeof(wi->keys));
     wi->should_close = 0;
+    wi->showZbuf = 0;
     wi->handle = (HWND)makeWindow(w, width, height, title);
     //wi->msg = {0};
     return w;
@@ -125,7 +126,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
     {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hWnd, &ps);
-        displayBuffer(img, hdc);
+        if(wi->showZbuf)
+            displayBuffer(zbuf, hdc);
+        else
+            displayBuffer(img, hdc);
         EndPaint(hWnd, &ps);
     }
     break;

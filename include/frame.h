@@ -76,6 +76,7 @@ typedef struct {
     HWND handle;
     MSG msg;
     int should_close;
+    int showZbuf;
 } windowi_t;
 #endif
 
