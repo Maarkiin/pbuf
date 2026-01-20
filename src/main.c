@@ -3,6 +3,7 @@
 #include <time.h>
 #include <math.h>
 
+#define color_c(R,G,B,A) (B&0xFF) | (G&0xFF) << 8 | (R&0xFF) << 16 | (A&0xFF) << 24
 // void point(buffer_t *b, vec2f_t p, uint32_t color)
 // {
 //     uint32_t *pixel = (uint32_t *)b->pixels;
@@ -263,7 +264,25 @@ void drawTriangle3c(buffer_t b, triangle_t t, vec3u32_t colors)
     }
 }
 
+void dtrixloop(buffer_t b, buffer_t depth, int y, int lx, int hx, triangle_t t, vec3f_t zs, uint32_t c)
+{
+    bufferi_t *depthi = depth.i;
+    for (int x = lx; x < hx; ++x)
+    {
+        vec4i_t u;
+        barycentricTriangle(t, x, y, &u);
 
+        float z = (zs.x*u.x + zs.y*u.y + zs.z*u.z)/u.w;
+        if(z>100.0f) return;
+        z /= 100.0f;
+        uint32_t zi = z*0xFFFFFFFF;
+        if ( zi <= ((uint32_t*)depthi->pixels)[x + y*depthi->width] )
+        {
+            pixel(depth, x, y, zi);
+            pixel(b, x, y, c);
+        }
+    }
+}
 
 // drawTriangle with ray intersection method via integer division
 void drawTriangle(buffer_t b, buffer_t depth, vec3f_t zs, triangle_t t, uint32_t c)
@@ -273,7 +292,7 @@ void drawTriangle(buffer_t b, buffer_t depth, vec3f_t zs, triangle_t t, uint32_t
     //     zs.value[i] = (zs.value[i] - 0.0f) / (100.0f - 0.0f) * UINT32_MAX;
     // }
 
-    bufferi_t *depthi = depth.i;
+    
     vec2i_t triangle[3];
     {
         vec2i_t ap = vec2i_c(t.v1.x, t.v1.y), bp = vec2i_c(t.v2.x, t.v2.y), cp = vec2i_c(t.v3.x, t.v3.y);
@@ -311,18 +330,7 @@ void drawTriangle(buffer_t b, buffer_t depth, vec3f_t zs, triangle_t t, uint32_t
             lx = cp.x + (y-cp.y) * (bp.x - cp.x) / (safe_denominator);
             hx = cp.x + (y-cp.y) * (ap.x - cp.x) / (ap.y - cp.y);
 
-            for (int x = lx; x < hx; ++x)
-            {
-                vec4i_t u;
-                barycentricTriangle(t, x, y, &u);
-                
-                uint32_t z = (zs.x*u.x + zs.y*u.y + zs.z*u.z)/u.w;
-                if ( z < ((uint32_t*)depthi->pixels)[x + y*depthi->width] )
-                {
-                    pixel(depth, x, y, z);
-                    pixel(b, x, y, c);
-                }
-            }
+            dtrixloop(b, depth, y, lx, hx, t, zs, c);
         }
         for (int y = my; y < hy + 1; ++y)
         {
@@ -331,18 +339,7 @@ void drawTriangle(buffer_t b, buffer_t depth, vec3f_t zs, triangle_t t, uint32_t
             lx = bp.x + (y-bp.y) * (ap.x - bp.x) / (ap.y - bp.y);
             hx = cp.x + (y-cp.y) * (ap.x - cp.x) / (ap.y - cp.y);
 
-            for (int x = lx; x < hx; ++x)
-            {
-                vec4i_t u;
-                barycentricTriangle(t, x, y, &u);
-                
-                uint32_t z = (zs.x*u.x + zs.y*u.y + zs.z*u.z)/u.w;
-                if ( z < ((uint32_t*)depthi->pixels)[x + y*depthi->width] )
-                {
-                    pixel(depth, x, y, z);
-                    pixel(b, x, y, c);
-                }
-            }
+            dtrixloop(b, depth, y, lx, hx, t, zs, c);
         }
     }
     
@@ -359,18 +356,7 @@ void drawTriangle(buffer_t b, buffer_t depth, vec3f_t zs, triangle_t t, uint32_t
             hx = cp.x + (y-cp.y) * (bp.x - cp.x) / (bp.y - cp.y);
             lx = cp.x + (y-cp.y) * (ap.x - cp.x) / (ap.y - cp.y);
             
-            for (int x = lx; x < hx; ++x)
-            {
-                vec4i_t u;
-                barycentricTriangle(t, x, y, &u);
-                
-                uint32_t z = (zs.x*u.x + zs.y*u.y + zs.z*u.z)/u.w;
-                if ( z < ((uint32_t*)depthi->pixels)[x + y*depthi->width] )
-                {
-                    pixel(depth, x, y, z);
-                    pixel(b, x, y, c);
-                }
-            }
+            dtrixloop(b, depth, y, lx, hx, t, zs, c);
         }
         for (int y = my; y < hy; ++y)
         {
@@ -381,18 +367,7 @@ void drawTriangle(buffer_t b, buffer_t depth, vec3f_t zs, triangle_t t, uint32_t
             hx = bp.x + (y-bp.y) * (ap.x - bp.x) / (safe_denominator);
             lx = cp.x + (y-cp.y) * (ap.x - cp.x) / (ap.y - cp.y);
             
-            for (int x = lx; x < hx; ++x)
-            {
-                vec4i_t u;
-                barycentricTriangle(t, x, y, &u);
-
-                uint32_t z = (zs.x*u.x + zs.y*u.y + zs.z*u.z)/u.w;
-                if ( z < ((uint32_t*)depthi->pixels)[x + y*depthi->width] )
-                {
-                    pixel(depth, x, y, z);
-                    pixel(b, x, y, c);
-                }
-            }
+            dtrixloop(b, depth, y, lx, hx, t, zs, c);
         }
     }
 }
@@ -619,12 +594,21 @@ void drawObject(buffer_t b, buffer_t d, object_t* o)
 
         uint32_t color = 0;
         uint32_t A = 0xFF;
-        uint32_t R = o->ns[(o->nsi[i]-1)*3 + 0] * 0xFF;
-        uint32_t G = o->ns[(o->nsi[i]-1)*3 + 1] * 0xFF;
-        uint32_t B = o->ns[(o->nsi[i]-1)*3 + 2] * 0xFF;
-        color = (B&0xFF) | (G&0xFF) << 8 | (R&0xFF) << 16 | (A&0xFF) << 24;
+        vec3f_t RGB = vec3f_c(o->ns[(o->nsi[i]-1)*3 + 0], o->ns[(o->nsi[i]-1)*3 + 1], o->ns[(o->nsi[i]-1)*3 + 2]);
+        RGB = rotate(RGB, o->ro);
+        // float a = (RGB.x - 1.0f)/6.0f + (RGB.y - 1.0f)/6.0f + (RGB.z - 1.0f)/6.0f;
+        // uint32_t R = a * 0xFF;
+        // uint32_t G = a * 0x10;
+        // uint32_t B = a * 0xF0;
+        uint32_t R = (RGB.x+1.0f)/2.0f * 0xFF; //o->ns[(o->nsi[i]-1)*3 + 0] * 0xFF;
+        uint32_t G = (RGB.y+1.0f)/2.0f * 0xFF; //o->ns[(o->nsi[i]-1)*3 + 1] * 0xFF;
+        uint32_t B = (RGB.z+1.0f)/2.0f * 0xFF; //o->ns[(o->nsi[i]-1)*3 + 2] * 0xFF;
 
 
+        
+
+        color = color_c(R,G,B,A);
+        //printf("0x%8X\n", color);
 
         drawTriangle(b, d, zs, t1, color);
     }
@@ -633,18 +617,22 @@ void drawObject(buffer_t b, buffer_t d, object_t* o)
 int main( int argc, char** argv )
 {
     printargs(argc, argv, "Log: Args");
-    window_t w = createWindow(w, 640, 580, ":fent reactor online:");
+    window_t w = createWindow(w, 640, 580, "FENT FENT FENT");
     windowi_t *wi = w.i; framei_t *fi = wi->frame.i;
     if (argc < 2) wi->showZbuf = 0;
     else wi->showZbuf = atoi(argv[1]);
     float f = 0;
+    object_t ball;
+    createObject(&ball, "res/monkey.obj");
+    ball.tr = vec3f_c( 2.0f,  5.0f,  15.0f);
+    ball.sc = vec3f_c( 1.0f,  1.0f,  1.0f);
     object_t monkey;
-    createObject(&monkey, "res/monkey.obj");
+    createObject(&monkey, "res/Untitled.obj");
     monkey.tr = vec3f_c( 2.0f,  5.0f,  15.0f);
-    monkey.sc = vec3f_c( 2.0f,  2.0f,  2.0f);
+    monkey.sc = vec3f_c( 1.0f,  1.0f,  1.0f);
     object_t mill;
     createObject(&mill, "res/Low Poly Mill.obj");
-    mill.tr = vec3f_c(0.0f, -2.0f, 15.0f);
+    mill.tr = vec3f_c(0.0f, -2.0f, 30.0f);
     mill.sc = vec3f_c(10.0f, 10.0f, 10.0f);
     
     while(!wi->should_close)
@@ -652,9 +640,16 @@ int main( int argc, char** argv )
         f++;
         clearScreen(fi->image, 0x00303030);
         clearScreen(fi->z_buffer, 0xFFFFFFFF);
-        monkey.ro = vec3f_c((f*3)/500.0f,(f*1)/500.0f,0);
+        ball.tr = vec3f_c( cos(f/100.0f)*14.3f, -0.5f + sin(f/500.0f)*5.0f, 50.0f+sin(f/100.0f)*14.3f);
+        //ball.ro = vec3f_c(0.0f, 3.14f, 0.0f);
+        ball.ro = vec3f_c(0.0f, (-f*1)/100.0f, 0.0f);
+        drawObject(fi->image, fi->z_buffer, &ball);
+        monkey.tr = vec3f_c( cos(f/100.0f)*15.0f, -2.0f + sin(f/500.0f)*5.0f, 50.0f+sin(f/100.0f)*15.0f);
+        //monkey.ro = vec3f_c(0.0f, 3.14f, 0.0f);
+        monkey.ro = vec3f_c(1.5f, 0.0f, 1.5f + (-f*1)/100.0f);
         drawObject(fi->image, fi->z_buffer, &monkey);
-        mill.ro = vec3f_c(0.0f, f/1500.0f, 0.0f);
+        mill.tr = vec3f_c(0.0f, -2.0f + sin(f/300.0f)*10.0f, 50.0f);
+        mill.ro = vec3f_c(0.0f, f/500.0f, 0.0f);
         drawObject(fi->image, fi->z_buffer, &mill);
         //break;
         displayWindow(w);   
